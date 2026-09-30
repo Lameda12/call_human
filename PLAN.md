@@ -29,8 +29,8 @@ The pitch in one line: *every other AI tutor can be talked into writing your cod
 | AI | `@anthropic-ai/sdk`, `client.messages.parse()` + `zodOutputFormat` | 0.129 |
 | Model | `claude-sonnet-5-5` for plan, grade, hints | |
 | Validation | zod | 4.6 |
-| DB/Auth | Supabase Postgres + anonymous sign-in, `@supabase/ssr` for cookies | ssr 0.12, supabase-js 2.117 |
-| Payments | Stripe Payment Link + webhook | stripe 22.6 |
+| DB/Auth | Supabase Postgres + anonymous sign-in (lazy), `@supabase/ssr` for cookies | ssr 0.12, supabase-js 2.117 |
+| Payments | Stripe Payment Link + Managed Payments (merchant of record) + webhook | stripe 22.6 |
 | OG image | `ImageResponse` from `next/og` (bundled, no extra dep) | |
 | Rate limit | Postgres function (no extra service) | |
 | Deploy | Vercel | |
@@ -191,20 +191,53 @@ Every CodeMirror change is recorded, flushed to the server, and replayable on th
 
 ---
 
-## 8. Identity, quota, paywall
+## 8. Identity, quota, payments
 
-1. **Anonymous users reset by clearing cookies** → free limit is fake. Fix: count by user id **and** a salted hash of the IP in `start_session`. Either hitting 3 blocks. [Inference] Shared IPs (campus wifi) will occasionally block a real new user; paywall copy says "free sessions used on this network".
-2. **Webhook fails or is slow** → user paid but still sees the paywall. Two paths to `paid = true`:
-   - Webhook: `await req.text()` raw body, `stripe.webhooks.constructEvent`, insert into `stripe_events` first (PK conflict = already processed, return 200), handle `checkout.session.completed`, set `paid` by `client_reference_id`. Any DB error returns 500 so Stripe retries.
-   - `/paid` page: retrieves the checkout session by `session_id` server-side; if `payment_status === "paid"` and `client_reference_id` matches the current user, sets `paid` itself. Same idempotent update.
-3. **Presale buyers (from tonight's landing page) have no user id.** The webhook writes them to `founders` by `checkout_session_id` + email. When the app launches, email each founder a `/claim?session_id=cs_...` link; `/claim` verifies the checkout with Stripe, checks `claimed_by is null`, and sets `paid` on the current anonymous user. No auth system needed.
-4. **Known v1 limitation:** paid status lives on an anonymous user, so clearing cookies loses it. Recovery is manual: they email you, you re-issue a `/claim` link. Proper email conversion is v2.
+### 8.1 Identity and free limit
 
-Stripe setup: Payment Link → After payment → redirect to `https://<domain>/paid?session_id={CHECKOUT_SESSION_ID}`.
+- Anonymous Supabase auth, created **lazily** by `getOrCreateUserId()` (`lib/auth.ts`) on the first server action that needs a user (`startSession`). `proxy.ts` only refreshes cookies and only runs on `/app`, `/s`, `/paid`, `/claim`. Landing-page visitors and crawlers never create auth users.
+- Anonymous users reset by clearing cookies, so `start_session` counts by user id **and** a salted IP hash (`IP_HASH_SALT`). Either hitting 3 blocks. [Inference] Shared campus IPs will occasionally block a real new user; paywall copy says "free sessions used on this network".
+- Quota is per UTC day. Say so in the paywall copy.
 
-Quota is counted per UTC day. Say so in the paywall copy.
+### 8.2 Payments playbook
 
----
+**Decision: stay on Stripe, with Managed Payments as merchant of record (MoR).** Stripe (via Link) is the seller of record, so it calculates, collects and remits sales tax/VAT/GST and handles fraud and disputes. This is the same move indie makers make with Lemon Squeezy, Paddle or Polar; Stripe bought Lemon Squeezy and that team now builds Managed Payments.
+
+Fees on one sale (processing + MoR, before tax, which the buyer pays on top):
+
+| Provider | Rate | On $5 | On $9 |
+|---|---|---|---|
+| Stripe + Managed Payments | 2.9% + $0.30 + 3.5% | $0.62 (12.4%) | $0.88 (9.7%) |
+| Lemon Squeezy / Paddle / Polar Starter | 5% + $0.50 | $0.75 (15%) | $0.95 (10.6%) |
+| Plain Stripe (no MoR, you own tax) | 2.9% + $0.30 | $0.45 (8.9%) | $0.56 (6.2%) |
+
+Polar adds 1.5% on international cards. At a $5 price the fixed $0.30 dominates; [Inference] raising the founding price to $9 is the biggest margin lever, not the provider.
+
+**Not RevenueCat.** It exists to unify mobile in-app purchases with web purchases for the same app. It can sell Stripe products on the web now, but for a web-only, one-time product it adds a second system of record and doesn't support buying the same one-time product twice. Revisit only if a mobile app ships.
+
+**Standard flow (what the Next.js + Supabase starters do):**
+1. `/buy` sends the buyer to Stripe with **`client_reference_id` = our user id** (Payment Links accept it as a URL param; switch to a server-created Checkout Session only if we need per-buyer line items or metadata).
+2. Stripe redirects to `/paid?session_id={CHECKOUT_SESSION_ID}`.
+3. **Webhook is the source of truth.** `/api/stripe/webhook`: raw body (`await req.text()`), `stripe.webhooks.constructEvent`, insert `stripe_events.id` first (PK conflict = duplicate, return 200), then:
+   - `checkout.session.completed` with `payment_status = paid` → `users.paid = true` by `client_reference_id`; if none (presale), insert into `founders`.
+   - `checkout.session.async_payment_succeeded` → same as above (delayed payment methods).
+   - `charge.refunded` (full refund) → `users.paid = false`.
+   - `charge.dispute.created` → `users.paid = false`, log for manual review.
+   - Return 500 on any DB error so Stripe retries.
+4. **`/paid` verifies too** (backstop for a slow or failed webhook): retrieve the session server-side; if `payment_status === "paid"` and `client_reference_id` matches the current user, set `paid`. Same idempotent update, so either path alone is enough.
+5. Receipts, refunds and tax documents come from Stripe. No custom billing UI.
+
+**Presale buyers (tonight's landing page) have no user id.** The webhook records them in `founders` by `checkout_session_id` + email. At launch, email each a `/claim?session_id=cs_...` link; `/claim` verifies the checkout with Stripe, checks `claimed_by is null`, and sets `paid` on the current anonymous user. Existing presales before the webhook ships get backfilled from the Stripe dashboard export.
+
+**Known v1 limitation:** paid status lives on an anonymous user, so clearing cookies loses it. Recovery is manual (re-issue a `/claim` link). Email conversion is v2.
+
+**Stripe setup checklist:**
+- [x] Payment Link, one-time, redirect to `/paid?session_id={CHECKOUT_SESSION_ID}`
+- [x] Managed Payments + automatic tax on
+- [ ] Statement descriptor set to something buyers recognize (Settings → Business → Public details)
+- [ ] Landing copy matches checkout: "+ tax" and the currency, or a tax-inclusive price
+- [ ] Test-mode Payment Link + `stripe listen --forward-to localhost:3000/api/stripe/webhook` for local webhook testing
+- [ ] Webhook endpoint registered for the four events above; `STRIPE_WEBHOOK_SECRET` + `STRIPE_SECRET_KEY` on Vercel
 
 ## 9. Design
 
@@ -242,7 +275,7 @@ Quota is counted per UTC day. Say so in the paywall copy.
 
 **Tonight, Wed Sep 30:** landing page `/`, `/buy`, `/paid`, deployed to Vercel. Presales open as soon as `STRIPE_PAYMENT_LINK` is set.
 
-**Thu Oct 1:** Supabase project, migrations, RLS, anonymous sign-in in `proxy.ts`, env vars on Vercel. `lib/guardrail/detect.ts` + unit tests (core risk, pure function, do it first).
+**Thu Oct 1:** Supabase project, migration `supabase/migrations/20261001000000_init.sql` (written, tested in PGlite), RLS, lazy anonymous sign-in, env vars on Vercel. `lib/guardrail/detect.ts` + unit tests (core risk, pure function, do it first).
 
 **Fri Oct 2:** `lib/ai/{client,plan,grade,hint}.ts` with zod schemas. Leak eval harness + 30 cases, prompts tuned until post-guardrail leaks = 0.
 
