@@ -77,6 +77,13 @@ const STRONG_PATTERNS: [RegExp, string][] = [
 const KEYWORD_HEADER = /^\s*(if|elif|else|for|while|def|class|try|except|with)\b.*:\s*$/;
 const CODE_PUNCT = /[=()[\]{};<>]/;
 
+// Code embedded mid-sentence: "Add for j in range(i + 1, len(nums)): under it."
+// or "then set seen[n] = i". Each match must itself be copied from the user.
+const INLINE_PATTERNS: [RegExp, string][] = [
+  [/\b(for|while|if|elif)\b[^.?!\n]*?:(?=\s|$)/g, "inline block header"],
+  [/\b[A-Za-z_][\w.]*(\[[^\]\n]*\])?\s*(\+=|-=|\*=|\/=|=)(?!=)\s*[^\s=][^,.;!?\n]*/g, "inline assignment"],
+];
+
 const FENCE = /```|~~~/;
 const INDENTED = /^( {4,}|\t+)\S/;
 const LIST_ITEM = /^\s*([-*•]|\d+[.)])\s/;
@@ -161,6 +168,14 @@ export function detectCode({ text, language, sources }: DetectInput): DetectResu
     const reason = codeLikeReason(bare, language);
     if (reason && !quoted(line)) {
       findings.push({ detector: "code_line", reason, snippet: line.trim() });
+      continue;
+    }
+    for (const [pattern, inlineReason] of INLINE_PATTERNS) {
+      for (const [match] of bare.matchAll(pattern)) {
+        if (inlineReason === "inline block header" && !CODE_PUNCT.test(match)) continue;
+        if (quoted(match)) continue;
+        findings.push({ detector: "code_line", reason: inlineReason, snippet: match.trim() });
+      }
     }
   }
 

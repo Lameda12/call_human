@@ -98,6 +98,18 @@ describe("leaks are caught (python)", () => {
     expect(detectors("Then do count += 1 inside the loop.")).toContain("code_line");
   });
 
+  it("inline loop header built only from calls the user already made", () => {
+    expect(detectors("Add for j in range(i + 1, len(nums)): under it.")).toContain("code_line");
+  });
+
+  it("inline assignment mid-sentence", () => {
+    expect(detectors("Then set best = nums[0] before you start.")).toContain("code_line");
+  });
+
+  it("inline header without code punctuation is prose", () => {
+    expect(check("for example: what if the list has one item?")).toEqual({ ok: true });
+  });
+
   it("comparison operator in prose", () => {
     expect(detectors("Stop when left == right.")).toContain("code_line");
   });
