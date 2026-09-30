@@ -1,4 +1,4 @@
--- call_human() v1 schema. See PLAN.md section 3.
+-- call_human() v1 schema. See PLAN.md section 3. Applied to project wsgnjawrmokkvrfgpmpl.
 -- Browser clients get read access to their own rows only. Every write goes
 -- through server code using the secret (service role) key.
 
@@ -166,7 +166,7 @@ create policy "read own attempts" on public.attempts
 -- Only the service role reads them (the plan must never reach the browser).
 
 -- ---------------------------------------------------------------------------
--- start_session: quota check + insert in one transaction (PLAN.md section 3)
+-- start_session: quota check + insert in one transaction (PLAN.md section 3. Applied to project wsgnjawrmokkvrfgpmpl.
 -- ---------------------------------------------------------------------------
 create function public.start_session(
   p_user_id  uuid,

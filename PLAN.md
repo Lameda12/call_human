@@ -275,7 +275,7 @@ Polar adds 1.5% on international cards. At a $5 price the fixed $0.30 dominates;
 
 **Tonight, Wed Sep 30:** landing page `/`, `/buy`, `/paid`, deployed to Vercel. Presales open as soon as `STRIPE_PAYMENT_LINK` is set.
 
-**Thu Oct 1:** Supabase project, migration `supabase/migrations/20261001000000_init.sql` (written, tested in PGlite), RLS, lazy anonymous sign-in, env vars on Vercel. `lib/guardrail/detect.ts` + unit tests (core risk, pure function, do it first).
+**Thu Oct 1:** Supabase project, migrations in `supabase/migrations/` (applied), RLS, lazy anonymous sign-in, env vars on Vercel. `lib/guardrail/detect.ts` + unit tests (core risk, pure function, do it first).
 
 **Fri Oct 2:** `lib/ai/{client,plan,grade,hint}.ts` with zod schemas. Leak eval harness + 30 cases, prompts tuned until post-guardrail leaks = 0.
 
