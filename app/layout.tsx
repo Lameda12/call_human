@@ -12,10 +12,15 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const siteUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
+  ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+  : "https://call-human.vercel.app";
+
 const description =
   "paste a coding problem. it hands you one step at a time and never writes the code. your exam doesn't have copilot.";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: "call_human()",
   description,
   openGraph: {
@@ -24,7 +29,7 @@ export const metadata: Metadata = {
     type: "website",
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: "call_human()",
     description,
   },

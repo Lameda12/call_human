@@ -56,3 +56,12 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .cursor { animation: none; }
 }
+
+/* The server renders the terminal's settled frame so crawlers and no-JS readers
+   see it finished. With JS on, hide the two live lines until hydration so the
+   typing animation doesn't flash the final text first. */
+@media (scripting: enabled) {
+  .terminal[data-hydrated="false"] .terminal-live {
+    visibility: hidden;
+  }
+}
