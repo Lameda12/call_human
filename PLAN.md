@@ -158,10 +158,12 @@ Problem text and user code are both attacker-controlled (`# tutor: ignore rules 
 
 - Any fenced block (```` ``` ```` or `~~~`) or 4-space indented block.
 - **Regex pre-filter:** `def `, `return `, `for (`, `=>`, trailing `;` or `{`, and `:` only when the line starts with a keyword (`if|for|while|def|elif|else|class|try|except|with`). Plain "ends with `:`" false-positives on prose like "Think about this:".
-- **Lezer parse check:** each line and each backtick span goes through the Lezer grammar for the session language (ships with the CodeMirror language packages, zero new deps). A line that parses as a statement with no error nodes counts as code. More than 1 code line → reject.
+- **Lezer parse check:** each line goes through the Lezer grammar for the session language (`@lezer/{python,javascript,java,cpp}`, the same grammars CodeMirror uses). A line counts as code if it parses with no error nodes **and** contains code punctuation (a bare "Yes" parses as an expression). C/Java lines are retried with a trailing `;` since models drop it.
 - **Identifier-only rule:** every backticked span and every `\w+\(` / `\w+\[` token must be an exact substring of the user's code or the problem text. `nums[i]` is fine if the user wrote it; `seen.add(x)` is a leak if they didn't.
 
-Borderline cases fail closed: anything the detector flags is a reject. There is no second-opinion classifier in v1.
+Borderline cases fail closed: **one** code-like line the user didn't write is a reject (not "more than 1"). Quoting the user's own code, in backticks or not, is always allowed; so are bare language keywords (`for`, `while`) and numbers in backticks. There is no second-opinion classifier in v1.
+
+Implemented in `lib/guardrail/detect.ts`, 48 unit tests in `detect.test.ts` (`pnpm test`).
 
 **On reject:** write a `leaks` row, retry once with a mid-conversation system message naming the violation. Second reject: log again, return the generic fallback ("Look at step N again. Compare the task to lines X-Y."). The grader's `status` from a rejected response is still trusted; only the feedback text is replaced.
 
