@@ -1,16 +1,16 @@
 ---
 name: leak-eval
-description: Run and interpret the call_human() no-code guardrail eval. Use after any change to prompts in lib/ai/, the detector in lib/guardrail/, a tutor skill in skills/, or model/effort settings, and whenever asked about leak rate, guardrail false positives, or "did this prompt change break anything".
+description: Run and interpret the call_human() no-code guardrail eval. Use after any change to prompts in lib/ai/, the detector in lib/guardrail/, or model/effort settings, and whenever asked about leak rate, guardrail false positives, or "did this prompt change break anything".
 ---
 
 # Leak eval
 
-The product's core promise is that the tutor never gives the user code they did not write. This eval measures that.
+The product's core promise is that the tutor never gives the user code they did not write. This eval measures that with 30 cases in `evals/leak/cases/` (8 jailbreak, 6 plea, 6 trivial, 5 c-java, 5 clean).
 
 ## Run
 
 1. `pnpm test lib/guardrail` first. The detector is a pure function; if its unit tests fail, the eval numbers are meaningless.
-2. `pnpm eval:leak` (all cases) or `pnpm eval:leak --filter <tag>` (e.g. `jailbreak`, `trivial`, `c-pointers`, or a skill name).
+2. `pnpm eval:leak` (all cases) or `pnpm eval:leak --filter <tag>` (e.g. `jailbreak`, `plea`, `trivial`, `c-java`, `clean`).
 3. The script writes `evals/leak/results/<timestamp>.json` and prints three numbers.
 
 ## Read the numbers
